@@ -1,0 +1,226 @@
+// Prisma Schema - Material Properties Database
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// ===== 核心实体 =====
+
+model Material {
+  id          String             @id @default(cuid())
+  name        String
+  designation String?            // 牌号
+  categoryId  String
+  category    MaterialCategory   @relation(fields: [categoryId], references: [id])
+  description String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  properties      MaterialProperty[]
+  compositions    MaterialComposition[]
+  dataSources     MaterialDataSource[]
+  applications    MaterialApplication[]
+  manufacturing   MaterialManufacturingMethod[]
+  surfaceTreatments MaterialSurfaceTreatment[]
+
+  @@index([categoryId])
+  @@index([name])
+}
+
+model MaterialCategory {
+  id          String              @id @default(cuid())
+  name        String              @unique
+  parentId    String?
+  parent      MaterialCategory?   @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    MaterialCategory[]  @relation("CategoryHierarchy")
+  materials   Material[]
+
+  @@index([parentId])
+}
+
+// ===== 性能数据 =====
+
+model PropertyCategory {
+  id         String              @id @default(cuid())
+  name       String              @unique
+  properties MaterialProperty[]
+
+  @@index([name])
+}
+
+model MaterialProperty {
+  id               String           @id @default(cuid())
+  materialId       String
+  material         Material         @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  categoryId       String
+  category         PropertyCategory @relation(fields: [categoryId], references: [id])
+  propertyName     String           // 具体属性名，如"热导率"、"抗拉强度"
+
+  value            Float?           // 单值
+  minValue         Float?           // 范围最小值
+  maxValue         Float?           // 范围最大值
+  unit             String?          // 单位
+
+  temperature      Float?           // 测试温度（°C）
+  testCondition    String?          // 测试条件描述
+  testStandard     String?          // 测试标准（如 ASTM、ISO）
+
+  notes            String?          // 备注
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([materialId])
+  @@index([categoryId])
+  @@index([propertyName])
+}
+
+// ===== 成分数据 =====
+
+model MaterialComposition {
+  id          String     @id @default(cuid())
+  materialId  String
+  material    Material   @relation(fields: [materialId], references: [id], onDelete: Cascade)
+
+  element     String     // 元素或组分名称
+  value       Float?     // 单值（百分比）
+  minValue    Float?     // 范围最小值
+  maxValue    Float?     // 范围最大值
+  unit        String?    // 单位（默认 wt% 或 at%）
+
+  notes       String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([materialId])
+}
+
+// ===== 数据来源 =====
+
+model DataSource {
+  id          String                @id @default(cuid())
+  type        String                // LITERATURE, HANDBOOK, EXPERIMENT, SUPPLIER, WEBSITE, OTHER
+  title       String
+  authors     String?               // 作者/机构
+  year        Int?
+  publisher   String?              // 出版社/期刊
+  url         String?               // 网址（针对网站来源）
+  supplier    String?              // 供应商名称
+
+  materials   MaterialDataSource[]
+
+  @@index([type])
+}
+
+model MaterialDataSource {
+  id           String        @id @default(cuid())
+  materialId   String
+  material     Material      @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  sourceId     String
+  source       DataSource    @relation(fields: [sourceId], references: [id])
+
+  propertyId   String?       // 关联到具体属性（可选）
+
+  notes        String?       // 该来源对材料的补充说明
+
+  createdAt    DateTime      @default(now())
+
+  @@index([materialId])
+  @@index([sourceId])
+}
+
+// ===== 材料应用 =====
+
+model ApplicationDomain {
+  id          String                      @id @default(cuid())
+  name        String                     @unique  // 应用领域名称，如"航空航天"、"汽车工业"、"医疗器械"
+  description String?                             // 应用领域描述
+  materials   MaterialApplication[]
+
+  @@index([name])
+}
+
+model MaterialApplication {
+  id           String             @id @default(cuid())
+  materialId   String
+  material     Material           @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  applicationId String
+  application   ApplicationDomain @relation(fields: [applicationId], references: [id])
+  notes        String?            // 该材料在此应用中的说明
+  typicalUse   Boolean            @default(false)  // 是否为该领域的典型材料
+
+  createdAt    DateTime           @default(now())
+
+  @@index([materialId])
+  @@index([applicationId])
+}
+
+// ===== 加工方式 =====
+
+model ManufacturingMethod {
+  id          String                       @id @default(cuid())
+  name        String                      @unique  // 加工方式名称，如"铸造"、"锻造"、"机加工"
+  category    String                               // 加工类别：primary, secondary, forming, joining
+  description String?                              // 加工方式描述
+  materials   MaterialManufacturingMethod[]
+
+  @@index([name])
+  @@index([category])
+}
+
+model MaterialManufacturingMethod {
+  id           String               @id @default(cuid())
+  materialId   String
+  material     Material             @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  methodId     String
+  method       ManufacturingMethod @relation(fields: [methodId], references: [id])
+  difficulty   String?              // 加工难度：easy, medium, hard
+  notes        String?              // 该材料加工方式的说明
+
+  createdAt    DateTime            @default(now())
+
+  @@index([materialId])
+  @@index([methodId])
+}
+
+// ===== 表面处理 =====
+
+model SurfaceTreatment {
+  id          String                      @id @default(cuid())
+  name        String                     @unique  // 表面处理方式名称，如"阳极氧化"、"电镀"
+  category    String                              // 处理类别：coating, chemical, thermal, mechanical
+  description String?                             // 处理方式描述
+  icon        String?                            // 图标
+  applications String?                           // 应用领域（JSON数组字符串）
+  advantages  String?                           // 优点（JSON数组字符串）
+  limitations String?                           // 局限性（JSON数组字符串）
+  processFlow String?                           // 工艺流程（JSON数组字符串）
+  parameters  String?                           // 通常工艺参数（JSON数组字符串）
+  precautions String?                           // 注意事项（JSON数组字符串）
+  materials   MaterialSurfaceTreatment[]
+
+  @@index([name])
+  @@index([category])
+}
+
+model MaterialSurfaceTreatment {
+  id           String            @id @default(cuid())
+  materialId   String
+  material     Material          @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  treatmentId  String
+  treatment    SurfaceTreatment  @relation(fields: [treatmentId], references: [id])
+  difficulty   String?           // 处理难度：easy, medium, hard
+  cost         String?           // 成本等级：low, medium, high
+  notes        String?           // 该材料表面处理的说明
+
+  createdAt    DateTime          @default(now())
+
+  @@index([materialId])
+  @@index([treatmentId])
+}
